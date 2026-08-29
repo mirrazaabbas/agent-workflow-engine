@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 StepFn = Callable[[dict[str, Any]], dict[str, Any]]
+ConditionFn = Callable[[dict[str, Any]], bool]
+ApprovalFn = Callable[[str, dict[str, Any]], bool]
 
 
 @dataclass(frozen=True)
@@ -15,6 +17,8 @@ class Step:
     name: str
     fn: StepFn
     retries: int = 1
+    condition: ConditionFn | None = None
+    requires_approval: bool = False
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -35,7 +39,15 @@ class RunEvent:
 @dataclass
 class Workflow:
     steps: list[Step]
+    approval_fn: ApprovalFn | None = None
+    max_steps: int = 50
     events: list[RunEvent] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.max_steps <= 0:
+            raise ValueError("max_steps must be greater than zero.")
+        if len(self.steps) > self.max_steps:
+            raise ValueError("Workflow exceeds configured max_steps limit.")
 
     def run(self, state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(state, dict):
@@ -43,11 +55,30 @@ class Workflow:
 
         self.events.clear()
         current = dict(state)
-        current.pop("workflow_status", None)
-        current.pop("failed_step", None)
-        current.pop("error", None)
+        for key in ("workflow_status", "failed_step", "error", "approval_required"):
+            current.pop(key, None)
 
         for step in self.steps:
+            if step.condition is not None and not step.condition(dict(current)):
+                self.events.append(RunEvent(step.name, "skipped", 0, 0, "condition=false"))
+                continue
+
+            if step.requires_approval:
+                if self.approval_fn is None:
+                    current["workflow_status"] = "blocked"
+                    current["failed_step"] = step.name
+                    current["approval_required"] = True
+                    self.events.append(
+                        RunEvent(step.name, "blocked", 0, 0, "approval callback missing")
+                    )
+                    return current
+                if not self.approval_fn(step.name, dict(current)):
+                    current["workflow_status"] = "blocked"
+                    current["failed_step"] = step.name
+                    current["approval_required"] = True
+                    self.events.append(RunEvent(step.name, "blocked", 0, 0, "approval denied"))
+                    return current
+
             last_error: Exception | None = None
             for attempt in range(1, step.retries + 2):
                 started = time.perf_counter()
@@ -93,6 +124,12 @@ def plan(state: dict[str, Any]) -> dict[str, Any]:
     return {"plan": tasks}
 
 
+def compare_evidence(state: dict[str, Any]) -> dict[str, Any]:
+    if state.get("intent") != "research":
+        raise ValueError("Evidence comparison is only valid for research requests.")
+    return {"evidence_compared": True}
+
+
 def execute(state: dict[str, Any]) -> dict[str, Any]:
     if "request" not in state or "plan" not in state:
         raise ValueError("Workflow state is missing request or plan data.")
@@ -104,11 +141,16 @@ def execute(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def is_research(state: dict[str, Any]) -> bool:
+    return state.get("intent") == "research"
+
+
 def main() -> None:
     workflow = Workflow(
         [
             Step("classify", classify),
             Step("plan", plan),
+            Step("compare_evidence", compare_evidence, condition=is_research),
             Step("execute", execute, retries=2),
         ]
     )
