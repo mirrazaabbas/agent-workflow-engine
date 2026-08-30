@@ -21,10 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install quality tools
-        run: python -m pip install --upgrade pip -r requirements-dev.txt
+      - name: Install quality and build tools
+        run: python -m pip install --upgrade pip -r requirements-dev.txt build
       - name: Compile sources
-        run: python -m compileall -q engine.py runtime.py adapters.py portfolio_pipeline.py telemetry.py tests
+        run: python -m compileall -q engine.py runtime.py adapters.py portfolio_pipeline.py telemetry.py production.py mcp.py observability.py src tests
       - name: Lint
         run: ruff check . --output-format=github
       - name: Run tests with coverage
@@ -34,4 +34,51 @@ jobs:
       - name: Smoke test workflow
         run: python engine.py
       - name: Validate cross-project imports
-        run: python -c "import adapters, portfolio_pipeline, telemetry; assert portfolio_pipeline.SCHEMA_VERSION == 'portfolio-evidence/v1'"
+        run: python -c "import adapters, portfolio_pipeline, telemetry, production, mcp; assert portfolio_pipeline.SCHEMA_VERSION == 'portfolio-evidence/v1'"
+      - name: Build installable package
+        run: python -m build
+      - name: Install wheel and smoke-test CLI
+        run: |
+          python -m pip install --force-reinstall dist/*.whl
+          agent-workflow --help
+
+  observability-integration:
+    runs-on: ubuntu-latest
+    services:
+      jaeger:
+        image: cr.jaegertracing.io/jaegertracing/jaeger:2.20.0
+        ports:
+          - 4318:4318
+          - 16686:16686
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install observability extra
+        run: python -m pip install --upgrade pip ".[observability]"
+      - name: Export a runtime event through OTLP
+        env:
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://127.0.0.1:4318/v1/traces
+        run: |
+          python - <<'PY'
+          import time
+          from observability import configure_tracer, export_runtime_events
+          from runtime import RuntimeEvent
+          tracer = configure_tracer(service_name="agent-workflow-engine-ci")
+          exported = export_runtime_events([RuntimeEvent("ci", "ok", 1, 1)], run_id="ci-run", tracer=tracer)
+          assert exported == 1
+          time.sleep(6)
+          PY
+      - name: Verify trace reached Jaeger
+        run: |
+          for attempt in {1..15}; do
+            SERVICES=$(curl --fail --silent http://127.0.0.1:16686/api/services || true)
+            if echo "$SERVICES" | grep -q "agent-workflow-engine-ci"; then
+              echo "$SERVICES"
+              exit 0
+            fi
+            sleep 1
+          done
+          curl --silent http://127.0.0.1:16686/api/services || true
+          exit 1
