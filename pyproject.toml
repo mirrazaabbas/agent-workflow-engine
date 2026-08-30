@@ -8,7 +8,11 @@ ignore = ["E501"]
 
 [tool.coverage.run]
 branch = true
-source = ["engine", "runtime"]
+source = ["engine", "runtime", "adapters", "portfolio_pipeline", "telemetry"]
 
 [tool.coverage.report]
 show_missing = true
+exclude_also = [
+  "def main\\(\\) -> None:",
+  "if __name__ == .__main__.:",
+]
