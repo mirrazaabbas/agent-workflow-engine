@@ -53,9 +53,8 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         adapter = adapters.OpenAICompatibleModelAdapter(
             model="test-model", transport=lambda _request, _timeout: b"{}"
         )
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(RuntimeError):
-                await adapter.generate([{"role": "user", "content": "Hi"}])
+        with patch.dict(os.environ, {}, clear=True), self.assertRaises(RuntimeError):
+            await adapter.generate([{"role": "user", "content": "Hi"}])
         with patch.dict(os.environ, {"OPENAI_API_KEY": "x"}):
             with self.assertRaises(ValueError):
                 await adapter.generate([])
