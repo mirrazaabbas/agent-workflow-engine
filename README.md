@@ -2,44 +2,112 @@
 
 [![CI](https://github.com/mirrazaabbas/agent-workflow-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/mirrazaabbas/agent-workflow-engine/actions/workflows/ci.yml)
 
-A small Python orchestration framework for deterministic multi-step AI-agent workflows. It keeps control flow explicit while demonstrating state transitions, retries, conditional routing, approval gates, failure handling, and execution telemetry.
+A Python orchestration framework for explicit, testable AI-agent workflows. It keeps control flow visible while demonstrating state transitions, conditional routing, retries, approval gates, permission scopes, resumability, idempotency, real model/tool adapter boundaries, and execution telemetry.
 
-## Current architecture
+## Architecture
 
 ```text
-Request → Classification → Planning → Conditional Steps → Approval Gates → Execution
-                                      ↓                         ↓
-                                 skip / run                allow / block
-                                      ↓                         ↓
-                                  event telemetry + structured workflow state
+Request
+  ↓
+Workflow runtime
+  ├─ conditions / routing
+  ├─ retries + exponential backoff
+  ├─ timeout controls
+  ├─ permission scopes
+  ├─ human approval gates
+  ├─ idempotency protection
+  └─ checkpoints / resume
+        ↓
+   Tool / model adapters
+     ├─ RAG HTTP tool
+     └─ OpenAI-compatible model adapter
+        ↓
+portfolio-evidence/v1
+        ↓
+AI Evaluation Harness
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the reliability model and remaining production roadmap.
+The original synchronous `engine.py` API remains available for simple deterministic workflows. `runtime.py` adds the production-oriented async execution layer.
 
-## Implemented features
+## Implemented engineering features
 
-- Composable workflow steps
-- Explicit shared state with copy-on-step execution
-- Per-step retry policies
-- Conditional step routing
-- Human-approval callbacks for protected steps
-- Safe blocked state when approval is missing or denied
-- Configurable maximum workflow step count
-- Graceful terminal failure state
-- Attempt, latency, status, and error telemetry
-- State/event reset between runs
-- Deterministic example workflow
-- Dockerized example runtime
-- Compile, Ruff, branch coverage, unit-test, and smoke-test CI
-- Python 3.10, 3.11, and 3.12 test matrix
+### Workflow reliability
 
-## Run
+- Sync and async-compatible workflow steps
+- Explicit shared state
+- Conditional routing
+- Per-step retries
+- Exponential retry backoff
+- Step timeouts
+- Configurable maximum-step protection
+- Graceful blocked and failed states
+- Duplicate step-name validation
+
+### Safety and side effects
+
+- Human approval gates
+- Explicit permission scopes
+- Idempotency ledger for duplicate side-effect protection
+- Checkpoint-safe execution
+
+### Persistence and resumability
+
+- In-memory checkpoint store
+- Atomic JSON-file checkpoint store
+- Resume-from-checkpoint execution
+- Completed-step skipping during recovery
+
+### Real integration boundaries
+
+`adapters.py` includes:
+
+- `OpenAICompatibleModelAdapter` for OpenAI-compatible chat-completion APIs
+- `RagHttpTool` for the RAG Knowledge Assistant `/answer` API
+- Structured model result metadata including provider, model, latency and token usage when supplied by the provider
+- Credential lookup through environment variables rather than source code
+
+The real provider adapter is unit-tested with an injected transport. CI does not require or expose external model credentials.
+
+### Observability
+
+- Attempt, latency, status and error events
+- JSON event export
+- OpenTelemetry-compatible tracer bridge in `telemetry.py`
+- Runtime-event metadata suitable for downstream audit/evaluation records
+
+## Cross-project portfolio integration
+
+`portfolio_pipeline.py` demonstrates an actual contract between three portfolio systems:
+
+```text
+RAG Knowledge Assistant
+        ↓ HTTP /answer
+Agent Workflow Engine
+        ↓ portfolio-evidence/v1
+AI Evaluation Harness
+```
+
+The pipeline executes the RAG call through an `external-read` permission scope and emits an evaluator-ready record containing:
+
+- final output
+- retrieved source IDs
+- citation IDs
+- retrieved context
+- retrieval ranks/scores
+- tool-call metadata
+- latency
+- agent runtime events
+
+Run it against a running RAG Knowledge Assistant:
 
 ```bash
-python engine.py
+python portfolio_pipeline.py \
+  "Explain how grounded RAG reduces unsupported claims" \
+  --rag-url http://127.0.0.1:8000 \
+  --top-k 3
 ```
 
-## Example approval gate
+## Basic workflow example
 
 ```python
 from engine import Step, Workflow
@@ -52,7 +120,7 @@ workflow = Workflow(
 result = workflow.run({"request": "publish approved content"})
 ```
 
-A protected step is blocked instead of executed when no approval callback exists or when approval is denied.
+A protected step is blocked instead of executed when approval is missing or denied.
 
 ## Docker
 
@@ -71,21 +139,28 @@ coverage report --fail-under=85
 python engine.py
 ```
 
+CI verifies Python 3.10, 3.11 and 3.12, compiles all integration modules, runs lint and branch coverage, executes the test suite, smoke-tests the original workflow, and validates cross-project imports.
+
+## Dependency maintenance
+
+Dependabot is configured for weekly Python and GitHub Actions dependency updates.
+
 ## Remaining engineering milestones
 
-- Async and parallel execution
-- Persistent checkpoints/state store
-- Timeout and cancellation controls
-- Tool permission scopes
-- Real LLM/model adapters
-- Real external tool/function-calling adapters
-- Token/cost accounting and distributed tracing
-- MCP integration
+The repository intentionally does **not** claim every distributed-agent capability. High-value next steps include:
+
+- Parallel/fan-out workflow execution
+- Database-backed checkpoint and idempotency stores for multi-worker deployments
+- Queue/distributed worker execution
+- Full OpenTelemetry SDK/collector integration test similar to the RAG project
+- Real-provider integration tests in an opt-in secret-enabled environment
+- MCP server/client adapters with permission enforcement
+- More complete token/cost budgets and rate-limit policies
 
 ## Skills demonstrated
 
-Python · AI Agents · Orchestration · Conditional Routing · Human-in-the-loop · State Management · Reliability · Observability · Testing · Docker · CI/CD
+Python · AI Agents · Orchestration · Async Workflows · Conditional Routing · Human-in-the-loop · Permission Scopes · Idempotency · Checkpointing · Reliability · OpenTelemetry Interfaces · RAG Integration · Model Adapters · Testing · Docker · CI/CD
 
-## Current scope
+## Scope and evidence
 
-This repository implements orchestration mechanics and safety controls. It does **not** claim a production LLM, autonomous external tool layer, persistent checkpoint store, or MCP server yet; those remain explicit next steps.
+The repository implements and tests orchestration, resumability, safety controls, model/tool adapter boundaries, and cross-project evidence generation. It does not claim an autonomous production agent platform, distributed scheduler, hosted model service, or MCP server that is not present in the code.
