@@ -1,0 +1,51 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+
+  dependency-audit-and-sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install project and auditor
+        run: python -m pip install --upgrade pip ".[observability]" pip-audit
+      - name: Audit installed dependencies
+        run: pip-audit --local
+      - name: Generate CycloneDX SBOM
+        run: pip-audit --local --format cyclonedx-json --output sbom.cdx.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-workflow-engine-sbom
+          path: sbom.cdx.json
+
+  container-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t agent-workflow-engine:security .
+      - name: Scan image for high/critical vulnerabilities
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.1 image --exit-code 1 --severity HIGH,CRITICAL agent-workflow-engine:security
