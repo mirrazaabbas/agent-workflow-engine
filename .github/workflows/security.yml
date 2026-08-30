@@ -17,17 +17,17 @@ jobs:
   codeql:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
         with:
           languages: python
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
 
   dependency-audit-and-sbom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install project and auditor
@@ -36,7 +36,7 @@ jobs:
         run: pip-audit --local
       - name: Generate CycloneDX SBOM
         run: pip-audit --local --format cyclonedx-json --output sbom.cdx.json || true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: agent-workflow-engine-sbom
           path: sbom.cdx.json
@@ -44,7 +44,7 @@ jobs:
   container-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t agent-workflow-engine:security .
       - name: Scan image for high/critical vulnerabilities
