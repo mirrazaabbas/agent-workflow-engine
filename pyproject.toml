@@ -34,7 +34,7 @@ Repository = "https://github.com/mirrazaabbas/agent-workflow-engine"
 Issues = "https://github.com/mirrazaabbas/agent-workflow-engine/issues"
 
 [tool.setuptools]
-package-dir = {agent_workflow_engine = "src/agent_workflow_engine"}
+packages = ["agent_workflow_engine"]
 py-modules = [
   "engine",
   "runtime",
@@ -46,8 +46,8 @@ py-modules = [
   "observability",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools.package-dir]
+agent_workflow_engine = "src/agent_workflow_engine"
 
 [tool.ruff]
 target-version = "py310"
