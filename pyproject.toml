@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,13 +8,13 @@ version = "1.0.0"
 description = "Explicit, testable orchestration primitives for reliable AI-agent workflows."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "Mir Raza Abbas"}]
 keywords = ["ai-agents", "orchestration", "workflow", "reliability", "human-in-the-loop"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
 dependencies = []
@@ -34,7 +34,7 @@ Repository = "https://github.com/mirrazaabbas/agent-workflow-engine"
 Issues = "https://github.com/mirrazaabbas/agent-workflow-engine/issues"
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {agent_workflow_engine = "src/agent_workflow_engine"}
 py-modules = [
   "engine",
   "runtime",
